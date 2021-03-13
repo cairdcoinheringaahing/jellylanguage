@@ -41,17 +41,17 @@ def base_decompression(integer, digits):
 	return [digits[i-1] for i in to_base(integer, len(digits))]
 
 def bind(links, outmost_links, index):
-        ret = [attrdict(arity = max(1, *arities(links)))]
-        n = 3
-        
-        if not links[-1].arity:
-                n = links[-1].call()
-                links = links[:-1]
+	ret = [attrdict(arity = max(1, *arities(links)))]
+	n = 3
+	
+	if not links[-1].arity:
+		n = links[-1].call()
+		links = links[:-1]
 
-        n = iterable(n, make_range = True)
-                
-        ret[0].call = lambda x = None, y = None: [variadic_link(links[(i-1) % len(links)], (x, y)) for i in n]
-        return ret
+	n = iterable(n, make_range = True)
+		
+	ret[0].call = lambda x = None, y = None: [variadic_link(links[(i-1) % len(links)], (x, y)) for i in n]
+	return ret
 
 def bounce(array):
 	return array[:-1] + array[::-1]
@@ -150,6 +150,7 @@ def depth(link):
 	return 1 + max(map(depth, link))
 
 def diagonals(matrix):
+	matrix = iterable(matrix)
 	shifted = [None] * len(matrix)
 	for index, row in enumerate(map(iterable, reversed(matrix))):
 		shifted[~index] = index * [None] + row
@@ -290,6 +291,7 @@ def from_base(digits, base):
 	return integer
 
 def from_diagonals(diagonals):
+	diagonals = iterable(diagonals)
 	upper_right = 1
 	while len(diagonals[upper_right - 1]) > 1:
 		upper_right += 1
@@ -1473,7 +1475,7 @@ def windowed_sublists(array):
 
 def output(argument, end = '', transform = stringify):
 	if locale.getdefaultlocale()[1][0:3] == 'UTF':
-		print(transform(argument), end = end, file = file)
+		print(transform(argument), end = end)
 	else:
 		print(unicode_to_jelly(transform(argument)), end = unicode_to_jelly(end))
 	sys.stdout.flush()
@@ -1639,7 +1641,7 @@ atoms = {
 	),
 	'Ė': attrdict(
 		arity = 1,
-		call = lambda z: [[t + 1, u] for t, u in enumerate(iterable(z, make_digits = True))]
+		call = lambda z: [[t + 1, u] for t, u in enumerate(iterable(z))]
 	),
 	'e': attrdict(
 		arity = 2,
@@ -1757,7 +1759,7 @@ atoms = {
 	),
 	'ḳ': attrdict(
 		arity = 2,
-		call = lambda x, y: [v for u,v in zip(x,y) if u]
+		call = lambda x, y: [v for u,v in zip(iterable(x, make_digits = True), iterable(y, make_digits = True)) if u]
 	),
 	'L': attrdict(
 		arity = 1,
@@ -3303,6 +3305,20 @@ quicks = {
 		condition = lambda links: links and links[0].arity,
 		quicklink = reduce_cumulative
 	),
+        'Ð/': attrdict(
+		condition = lambda links: links and links[0].arity,
+		quicklink = reduce_right
+	),
+	'Ð\\': attrdict(
+		condition = lambda links: links and links[0].arity,
+		quicklink = lambda links, outmost_links, index: reduce_right(links, outmost_links, index, cumulative = True)
+	),
+        'Ɓ': attrdict(
+		condition = lambda links: links and (
+			(links[-1].arity == 0 and len(links) - 1 == links[-1].call()) or
+			(links[-1].arity and len(links) == 3)),
+		quicklink = bind
+	),
 	'Ƒ': attrdict(
 		condition = lambda links: links,
 		quicklink = lambda links, outmost_links, index: [attrdict(
@@ -3314,6 +3330,24 @@ quicks = {
 		condition = lambda links: links and links[0].arity,
 		quicklink = foldl
 	),
+        'Ðƒ': attrdict(
+		condition = lambda links: links and links[0].arity,
+		quicklink = foldl_cumulative
+	),
+        'Ƙ': attrdict(
+		condition = lambda links: links and links[0].arity,
+		quicklink = lambda links, outmost_links, index: [attrdict(
+			arity = 2,
+			call = lambda x, y: list(filter(lambda t: variadic_link(links[0], (t, t)) == y, iterable(x, make_range = True)))
+		)]
+	),
+	'ÐƘ': attrdict(
+		condition = lambda links: links and links[0].arity,
+		quicklink = lambda links, outmost_links, index: [attrdict(
+			arity = 2,
+			call = lambda x, y: list(filter(lambda t: variadic_link(links[0], (t, t)) != y, iterable(x, make_range = True)))
+		)]
+	),
 	'ƙ': attrdict(
 		condition = lambda links: links and links[0].arity,
 		quicklink = lambda links, outmost_links, index: [attrdict(
@@ -3321,11 +3355,25 @@ quicks = {
 			call = lambda x, y: [monadic_link(links[0], g) for g in split_key(iterable(x, make_digits = True), iterable(y, make_digits = True))]
 		)]
 	),
+        'ɱ': attrdict(
+		condition = lambda links: len(links) - sum(map(leading_nilad, split_suffix(links)[:-1])) >= 2,
+		quicklink = lambda links, outmost_links, index: [attrdict(
+			arity = 1,
+			call = lambda z: [monadic_chain(links, i) for i in iterable(z, make_range = True)]
+		)]
+	),
 	'Ɲ': attrdict(
 		condition = lambda links: links and not leading_nilad(links),
 		quicklink = lambda links, outmost_links, index: [attrdict(
 			arity = 1,
 			call = lambda z: neighbors(links, z)
+		)]
+	),
+        'ɲ': attrdict(
+		condition = lambda links: links and not leading_nilad(links),
+		quicklink = lambda links, outmost_links, index: [attrdict(
+			arity = 1,
+			call = lambda z: all(neighbors(links, z))
 		)]
 	),
 	'Ƥ': attrdict(
@@ -3350,12 +3398,35 @@ quicks = {
 			call = lambda x = None, y = None: loop_until_loop(links[0], (x, y), return_all = True, vary_rarg = False)
 		)]
 	),
+	'ÐƬ': attrdict(
+		condition = lambda links: links,
+		quicklink = lambda links, outmost_links, index: [attrdict(
+			arity = links[0].arity,
+			call = lambda x = None, y = None: len(loop_until_loop(links[0], (x, y), return_all = True)) - 1
+		)]
+	)
 	'ƭ': attrdict(
 		condition = lambda links: links and (
 			(links[-1].arity == 0 and len(links) - 1 == links[-1].call()) or
 			(links[-1].arity and len(links) == 2)),
 		quicklink = tie
 	),
+	'Ȥ': attrdict(
+		condition = lambda links: links,
+		quicklink = lambda links, outmost_links, index: [attrdict(
+			arity = max(1, links[0].arity),
+			call = lambda x, y = None: variadic_link(links[0], (zip_ragged(variadic_link(links[0], (x, y))), y))
+		)]
+	),
+	'ȥ': attrdict(
+		condition = lambda links: links and links[0].arity,
+		quicklink = lambda links, outmost_links, index: reduce(links, outmost_links, index, rowwise = True)
+	),
+	'Ðȥ': attrdict(
+		condition = lambda links: links and links[0].arity,
+		quicklink = lambda links, outmost_links, index: reduce_cumulative(links, outmost_links, index, rowwise = True)
+	),
+        
 	'¤': quickchain(0, 2),
 	'$': quickchain(1, 2),
 	'Ɗ': quickchain(1, 3),
@@ -3363,11 +3434,19 @@ quicks = {
 	'¥': quickchain(2, 2),
 	'ɗ': quickchain(2, 3),
 	'ʋ': quickchain(2, 4),
+        
 	'#': attrdict(
 		condition = lambda links: len(links) == 2,
 		quicklink = lambda links, outmost_links, index: ([links.pop(0)] if len(links) == 2 and links[0].arity == 0 else []) + [attrdict(
 			arity = max_arity(links),
 			call = lambda x = None, y = None: nfind(links, (x, y))
+		)]
+	),
+        '(': attrdict(
+		condition = lambda links: links,
+		quicklink = lambda links, outmost_links, index: ([links.pop(0)] if len(links) == 2 and links[0].arity == 0 else []) + [attrdict(
+			arity = max_arity(links),
+			call = lambda x = None, y = None: nfind(links, (x, y), find = 1),
 		)]
 	),
 	'?': attrdict(
@@ -3388,6 +3467,20 @@ quicks = {
 		condition = lambda links: links,
 		quicklink = lambda links, outmost_links, index: links * 2
 	),
+        'Ð!': attrdict(
+		condition = lambda links: links,
+		quicklink = lambda links, outmost_links, index: [attrdict(
+			arity = max(1, links[0].arity),
+			call = lambda x, y = None: [variadic_link(links[0], (list(t), y)) for t in itertools.permutations(iterable(x, make_range = True))]
+		)]
+	),
+	'Ð#': attrdict(
+		condition = lambda links: len(links) == 2,
+		quicklink = lambda links, outmost_links, index: ([links.pop(0)] if len(links) == 2 and links[0].arity == 0 else []) + [attrdict(
+			arity = max_arity(links),
+			call = lambda x = None, y = None: nfind(links, (x, y))[-1]
+		)]
+	),
 	'Ð¡': attrdict(
 		condition = lambda links: len(links) == 2,
 		quicklink = lambda links, outmost_links, index: ([links.pop(0)] if len(links) == 2 and links[0].arity == 0 else []) + [attrdict(
@@ -3395,11 +3488,39 @@ quicks = {
 			call = lambda x = None, y = None: ntimes(links, (x, y), cumulative = True)
 		)]
 	),
+        'ÐF': attrdict(
+		condition = lambda links: len(links) == 2,
+		quicklink = lambda links, outmost_links, index: ([links.pop(0)] if len(links) == 2 and links[0].arity == 0 else []) + [attrdict(
+			arity = max(link.arity for link in links),
+			call = lambda x = None, y = None: len(ntimes(links, (x, y), cumulative = True)) - 1
+		)]
+	),
 	'Ð¿': attrdict(
 		condition = lambda links: len(links) == 2,
 		quicklink = lambda links, outmost_links, index: [attrdict(
 			arity = max(link.arity for link in links),
 			call = lambda x = None, y = None: while_loop(links[0], links[1], (x, y), cumulative = True)
+		)]
+	),
+	'ÐW': attrdict(
+		condition = lambda links: len(links) == 2,
+		quicklink = lambda links, outmost_links, index: [attrdict(
+			arity = max(link.arity for link in links),
+			call = lambda x = None, y = None: len(while_loop(links[0], links[1], (x, y), cumulative = True)) - 1
+		)]
+	),
+        'ÐẠ': attrdict(
+		condition = lambda links: links,
+		quicklink = lambda links, outmost_links, index: [attrdict(
+			arity = links[0].arity,
+			call = lambda x, y = None: list(filter(lambda t: all(variadic_link(links[0], (t, y))), iterable(x, make_range = True)))
+		)]
+	),
+        'ÐẸ': attrdict(
+		condition = lambda links: links,
+		quicklink = lambda links, outmost_links, index: [attrdict(
+			arity = links[0].arity,
+			call = lambda x, y = None: list(filter(lambda t: any(variadic_link(links[0], (t, y))), iterable(x, make_range = True)))
 		)]
 	),
 	'Ðe': attrdict(
@@ -3421,111 +3542,6 @@ quicks = {
 		quicklink = lambda links, outmost_links, index: [attrdict(
 			arity = links[0].arity,
 			call = lambda x, y = None: list(itertools.filterfalse(lambda t: variadic_link(links[0], (t, y)), iterable(x, make_range = True)))
-		)]
-	),
-	'ÐL': attrdict(
-		condition = lambda links: links,
-		quicklink = lambda links, outmost_links, index: [attrdict(
-			arity = links[0].arity,
-			call = lambda x = None, y = None: loop_until_loop(links[0], (x, y))
-		)]
-	),
-	'ÐĿ': attrdict(
-		condition = lambda links: links,
-		quicklink = lambda links, outmost_links, index: [attrdict(
-			arity = links[0].arity,
-			call = lambda x = None, y = None: loop_until_loop(links[0], (x, y), return_all = True)
-		)]
-	),
-	'ÐḶ': attrdict(
-		condition = lambda links: links,
-		quicklink = lambda links, outmost_links, index: [attrdict(
-			arity = links[0].arity,
-			call = lambda x = None, y = None: loop_until_loop(links[0], (x, y), return_loop = True)
-		)]
-	),
-	'ÐṂ': attrdict(
-		condition = lambda links: links,
-		quicklink = lambda links, outmost_links, index: [attrdict(
-			arity = links[0].arity,
-			call = lambda x, y = None: extremes(min, links[0], (x, y))
-		)]
-	),
-	'ÐṀ': attrdict(
-		condition = lambda links: links,
-		quicklink = lambda links, outmost_links, index: [attrdict(
-			arity = links[0].arity,
-			call = lambda x, y = None: extremes(max, links[0], (x, y))
-		)]
-	),
-	'Ðo': attrdict(
-		condition = lambda links: links,
-		quicklink = lambda links, outmost_links, index: [attrdict(
-			arity = max(1, links[0].arity),
-			call = lambda x, y = None: sparse(links[0], (x, y), range(1, len(x) + 1, 2), indices_literal = True)
-		)]
-	),
-
-	## New quicks ##
-
-	'(': attrdict(
-		condition = lambda links: links,
-		quicklink = lambda links, outmost_links, index: ([links.pop(0)] if len(links) == 2 and links[0].arity == 0 else []) + [attrdict(
-			arity = max_arity(links),
-			call = lambda x = None, y = None: nfind(links, (x, y), find = 1),
-		)]
-	),
-	'Ð#': attrdict(
-		condition = lambda links: len(links) == 2,
-		quicklink = lambda links, outmost_links, index: ([links.pop(0)] if len(links) == 2 and links[0].arity == 0 else []) + [attrdict(
-			arity = max_arity(links),
-			call = lambda x = None, y = None: nfind(links, (x, y))[-1]
-		)]
-	),
-	'Ð/': attrdict(
-		condition = lambda links: links and links[0].arity,
-		quicklink = reduce_right
-	),
-	'Ð\\': attrdict(
-		condition = lambda links: links and links[0].arity,
-		quicklink = lambda links, outmost_links, index: reduce_right(links, outmost_links, index, cumulative = True)
-	),
-        'Ð!': attrdict(
-                condition = lambda links: links,
-                quicklink = lambda links, outmost_links, index: [attrdict(
-                        arity = max(1, links[0].arity),
-                        call = lambda x, y = None: [variadic_link(links[0], (list(t), y)) for t in itertools.permutations(iterable(x, make_range = True))]
-                )]
-        ),
-	'ÐẠ': attrdict(
-		condition = lambda links: links,
-		quicklink = lambda links, outmost_links, index: [attrdict(
-			arity = links[0].arity,
-			call = lambda x, y = None: list(filter(lambda t: all(variadic_link(links[0], (t, y))), iterable(x, make_range = True)))
-		)]
-	),
-        'Ɓ': attrdict(
-		condition = lambda links: links and (
-			(links[-1].arity == 0 and len(links) - 1 == links[-1].call()) or
-			(links[-1].arity and len(links) == 3)),
-		quicklink = bind
-	),
-	'ÐẸ': attrdict(
-		condition = lambda links: links,
-		quicklink = lambda links, outmost_links, index: [attrdict(
-			arity = links[0].arity,
-			call = lambda x, y = None: list(filter(lambda t: any(variadic_link(links[0], (t, y))), iterable(x, make_range = True)))
-		)]
-	),
-	'Ðƒ': attrdict(
-		condition = lambda links: links and links[0].arity,
-		quicklink = foldl_cumulative
-	),
-	'ÐF': attrdict(
-		condition = lambda links: len(links) == 2,
-		quicklink = lambda links, outmost_links, index: ([links.pop(0)] if len(links) == 2 and links[0].arity == 0 else []) + [attrdict(
-			arity = max(link.arity for link in links),
-			call = lambda x = None, y = None: len(ntimes(links, (x, y), cumulative = True)) - 1
 		)]
 	),
 	'ÐG': attrdict(
@@ -3563,83 +3579,68 @@ quicks = {
 			call = lambda x, y = None: group_by(links, (x, y))
 		)]
 	),
-	'Ƙ': attrdict(
-		condition = lambda links: links and links[0].arity,
+	'ÐL': attrdict(
+		condition = lambda links: links,
 		quicklink = lambda links, outmost_links, index: [attrdict(
-			arity = 2,
-			call = lambda x, y: list(filter(lambda t: variadic_link(links[0], (t, t)) == y, iterable(x, make_range = True)))
+			arity = links[0].arity,
+			call = lambda x = None, y = None: loop_until_loop(links[0], (x, y))
 		)]
 	),
-	'ÐƘ': attrdict(
-		condition = lambda links: links and links[0].arity,
+	'ÐĿ': attrdict(
+		condition = lambda links: links,
 		quicklink = lambda links, outmost_links, index: [attrdict(
-			arity = 2,
-			call = lambda x, y: list(filter(lambda t: variadic_link(links[0], (t, t)) != y, iterable(x, make_range = True)))
+			arity = links[0].arity,
+			call = lambda x = None, y = None: loop_until_loop(links[0], (x, y), return_all = True)
 		)]
 	),
-	'ɱ': attrdict(
-		condition = lambda links: len(links) - sum(map(leading_nilad, split_suffix(links)[:-1])) >= 2,
+	'ÐḶ': attrdict(
+		condition = lambda links: links,
 		quicklink = lambda links, outmost_links, index: [attrdict(
-			arity = 1,
-			call = lambda z: [monadic_chain(links, i) for i in iterable(z, make_range = True)]
+			arity = links[0].arity,
+			call = lambda x = None, y = None: loop_until_loop(links[0], (x, y), return_loop = True)
 		)]
 	),
-	'Ðṁ': attrdict(
+	'ÐṂ': attrdict(
+		condition = lambda links: links,
+		quicklink = lambda links, outmost_links, index: [attrdict(
+			arity = links[0].arity,
+			call = lambda x, y = None: extremes(min, links[0], (x, y))
+		)]
+	),
+	'ÐṀ': attrdict(
+		condition = lambda links: links,
+		quicklink = lambda links, outmost_links, index: [attrdict(
+			arity = links[0].arity,
+			call = lambda x, y = None: extremes(max, links[0], (x, y))
+		)]
+	),
+        'Ðṁ': attrdict(
 		condition = lambda links: links,
 		quicklink = lambda links, outmost_lists, index: [attrdict(
 			arity = links[0].arity,
 			call = lambda x, y = None: atoms['ṁ'].call(x, [variadic_link(links[0], (t, y)) for t in x])
 		)]
 	),
-	'ɲ': attrdict(
-		condition = lambda links: links and not leading_nilad(links),
+	'Ðo': attrdict(
+		condition = lambda links: links,
 		quicklink = lambda links, outmost_links, index: [attrdict(
-			arity = 1,
-			call = lambda z: all(neighbors(links, z))
+			arity = max(1, links[0].arity),
+			call = lambda x, y = None: sparse(links[0], (x, y), range(1, len(x) + 1, 2), indices_literal = True)
 		)]
 	),
         'ÐP': attrdict(
-                condition = lambda links: links,
-                quicklink = lambda links, outmost_links, index: [attrdict(
-                        arity = max(1, links[0].arity),
-                        call = lambda x, y = None: [variadic_link(links[0], (t, y)) for t in powerset_generator(iterable(x, make_range = True))]
-                )]
-        ),
-        'ÐṖ': attrdict(
-                condition = lambda links: links,
-                quicklink = lambda links, outmost_links, index: [attrdict(
-                        arity = max(1, links[0].arity),
-                        call = lambda x, y = None: [variadic_link(links[0], (t, y)) for t in partitions_generator(iterable(x, make_digits = True))]
-                )]
-        ),
-	'ÐƬ': attrdict(
 		condition = lambda links: links,
 		quicklink = lambda links, outmost_links, index: [attrdict(
-			arity = links[0].arity,
-			call = lambda x = None, y = None: len(loop_until_loop(links[0], (x, y), return_all = True)) - 1
+			arity = max(1, links[0].arity),
+			call = lambda x, y = None: [variadic_link(links[0], (t, y)) for t in powerset_generator(iterable(x, make_range = True))]
 		)]
 	),
-	'ÐW': attrdict(
-		condition = lambda links: len(links) == 2,
+	'ÐṖ': attrdict(
+		condition = lambda links: links,
 		quicklink = lambda links, outmost_links, index: [attrdict(
-			arity = max(link.arity for link in links),
-			call = lambda x = None, y = None: len(while_loop(links[0], links[1], (x, y), cumulative = True)) - 1
+			arity = max(1, links[0].arity),
+			call = lambda x, y = None: [variadic_link(links[0], (t, y)) for t in partitions_generator(iterable(x, make_digits = True))]
 		)]
-	),
-        'Ȥ': attrdict(
-                condition = lambda links: links,
-                quicklink = lambda links, outmost_links, index: [attrdict(
-                        arity = max(1, links[0].arity),
-                        call = lambda x, y = None: variadic_link(links[0], (zip_ragged(variadic_link(links[0], (x, y))), y))
-                )]
-        ),
-	'ȥ': attrdict(
-		condition = lambda links: links and links[0].arity,
-		quicklink = lambda links, outmost_links, index: reduce(links, outmost_links, index, rowwise = True)
-	),
-	'Ðȥ': attrdict(
-		condition = lambda links: links and links[0].arity,
-		quicklink = lambda links, outmost_links, index: reduce_cumulative(links, outmost_links, index, rowwise = True)
 	),
 		
 }
@@ -3659,11 +3660,11 @@ hypers = {
 	),
 	'{': lambda link, none = None: attrdict(
 		arity = 2,
-		call = lambda x, y: dyadic_link(link, (x, x)) if link.arity == 2 else monadic_link(link, x)
+		call = lambda x, y: variadic_link(link, (x, x))
 	),
 	'}': lambda link, none = None: attrdict(
 		arity = 2,
-		call = lambda x, y: dyadic_link(link, (y, y)) if link.arity == 2 else monadic_link(link, y)
+		call = lambda x, y: variadic_link(link, (y, y))
 	),
 	'€': lambda link, none = None: attrdict(
 		arity = max(1, link.arity),
@@ -3696,7 +3697,7 @@ hypers = {
 	'ŀ': lambda index, links: attrdict(
 		arity = 2,
 		call = lambda x, y: dyadic_chain(links[(variadic_link(index, (x, y)) - 1) % (len(links) - 1)], (x, y))
-	),
+	)
 }
 
 # Aliases
