@@ -6,6 +6,8 @@ def main(code, args, end):
 	for index in range(min(7, len(args))):
 		atoms['³⁴⁵⁶⁷⁸⁹'[index]].call = lambda literal = args[index]: literal
 
+	atoms['ʂ'] = lambda: args
+
 	try:
 		output(jelly_eval(code, args[:2]), end)
 	except KeyboardInterrupt:
