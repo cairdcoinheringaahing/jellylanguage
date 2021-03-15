@@ -65,19 +65,6 @@ def carmichael(n):
 		c = lcm(c, 2 ** (k - 2) if p == 2 < k else (p - 1) * p ** (k - 1))
 	return c
 
-def create_chain(chain, arity = -1, isForward = True):
-	return attrdict(
-		arity = arity,
-		chain = chain,
-		call = lambda x = None, y = None: variadic_chain(chain, isForward and (x, y) or (y, x))
-	)
-
-def create_literal(string):
-	return attrdict(
-		arity = 0,
-		call = lambda: python_eval(string, False)
-	)
-
 def conv_dyadic_integer(link, larg, rarg):
 	try:
 		iconv_larg = int(larg)
@@ -127,20 +114,18 @@ def count_up(links, args):
 		counter += 1
 	return counter - 1
 
-def determinant(matrix):
-	matrix = sympy.Matrix(iterable(matrix, make_digits = True))
-	if matrix.is_square:
-		return simplest_number(matrix.det())
-	return simplest_number(math.sqrt((matrix * matrix.transpose()).det()))
+def create_chain(chain, arity = -1, isForward = True):
+	return attrdict(
+		arity = arity,
+		chain = chain,
+		call = lambda x = None, y = None: variadic_chain(chain, isForward and (x, y) or (y, x))
+	)
 
-def div(dividend, divisor, floor = False):
-	if divisor == 0:
-		return dividend * inf
-	if divisor == inf:
-		return 0
-	if floor or (type(dividend) == int and type(divisor) == int and not dividend % divisor):
-		return int(dividend // divisor)
-	return dividend / divisor
+def create_literal(string):
+	return attrdict(
+		arity = 0,
+		call = lambda: python_eval(string, False)
+	)
 
 def depth(link):
 	if type(link) != list:
@@ -148,6 +133,12 @@ def depth(link):
 	if not link:
 		return 1
 	return 1 + max(map(depth, link))
+
+def determinant(matrix):
+	matrix = sympy.Matrix(iterable(matrix, make_digits = True))
+	if matrix.is_square:
+		return simplest_number(matrix.det())
+	return simplest_number(math.sqrt((matrix * matrix.transpose()).det()))
 
 def diagonals(matrix):
 	matrix = iterable(matrix)
@@ -166,6 +157,15 @@ def distinct_sieve(array):
 	for (i, x) in enumerate(array):
 		result.append(1 if i == array.index(x) else 0)
 	return result
+
+def div(dividend, divisor, floor = False):
+	if divisor == 0:
+		return dividend * inf
+	if divisor == inf:
+		return 0
+	if floor or (type(dividend) == int and type(divisor) == int and not dividend % divisor):
+		return int(dividend // divisor)
+	return dividend / divisor
 
 def dot_product(left, right, truncate = False):
 	left, right = iterable(left), iterable(right)
@@ -330,13 +330,6 @@ def from_primorial_base(digits):
 		integer += digit * sympy.ntheory.generate.primorial(placeIndex)
 	return integer
 
-def simplest_number(number):
-	if abs(number ** 2) != number ** 2:
-		return number
-	if number % 1:
-		return float(number)
-	return int(number)
-
 def get_request(url):
 	url = ''.join(map(str, url))
 	url = (re.match(r"[A-Za-z][A-Za-z0-9+.-]*://", url) == None and "http://" or "") + url
@@ -411,20 +404,6 @@ def group_consecutive(array):
 
 	return groups
 
-def group_md(array):
-	array = iterable(array, make_digits = True)
-	grouped = {}
-	for index, item in enumerate_md(array):
-		item = repr(item)
-		if item in grouped:
-			grouped[item].append(index)
-		else:
-			grouped[item] = [index]
-	try:
-		return [grouped[key] for key in sorted(grouped, key = eval)]
-	except TypeError:
-		return [grouped[key] for key in sorted(grouped)]
-
 def group_equal(array):
 	array = iterable(array, make_digits = True)
 	groups = []
@@ -447,18 +426,22 @@ def group_lengths(array):
 		previous_item = x
 	return lengths
 
+def group_md(array):
+	array = iterable(array, make_digits = True)
+	grouped = {}
+	for index, item in enumerate_md(array):
+		item = repr(item)
+		if item in grouped:
+			grouped[item].append(index)
+		else:
+			grouped[item] = [index]
+	try:
+		return [grouped[key] for key in sorted(grouped, key = eval)]
+	except TypeError:
+		return [grouped[key] for key in sorted(grouped)]
+
 def identity(argument):
 	return argument
-
-def iterable(argument, make_copy = False, make_digits = False, make_range = False):
-	the_type = type(argument)
-	if the_type == list:
-		return copy.deepcopy(argument) if make_copy else argument
-	if the_type != str and make_digits:
-		return to_base(argument, 10)
-	if the_type != str and make_range:
-		return list(range(1, int(argument) + 1))
-	return [argument]
 
 def index_of(haystack, needle):
 	if depth(haystack) == depth(needle) == 1:
@@ -496,6 +479,13 @@ def indices_md(array, upper_level = []):
 			a_indices.extend(indices_md(item, upper_level = upper_level + [i + 1]))
 	return a_indices
 
+def integer_partitions(n, I=1):
+	result = [[n,]]
+	for i in range(I, n//2 + 1):
+		for p in integer_partitions(n-i, i):
+			result.append([i,] + p)
+	return result
+
 def isqrt(number):
 	a = number
 	b = (a + 1) // 2
@@ -512,6 +502,32 @@ def is_string(argument):
 	if type(argument) != list:
 		return False
 	return all(map(lambda t: type(t) == str, argument))
+
+def iterable(argument, make_copy = False, make_digits = False, make_range = False):
+	the_type = type(argument)
+	if the_type == list:
+		return copy.deepcopy(argument) if make_copy else argument
+	if the_type != str and make_digits:
+		return to_base(argument, 10)
+	if the_type != str and make_range:
+		return list(range(1, int(argument) + 1))
+	return [argument]
+
+def jellify(element, dirty = False):
+	if element is None:
+		return []
+	if type(element) == str and dirty:
+		return list(element)
+	if type(element) in (int, float, complex) or (type(element) == str and len(element) == 1):
+		return element
+	try:
+		return [jellify(item, dirty) for item in element]
+	except:
+		if element.is_integer:
+			return int(element)
+		if element.is_real:
+			return float(element)
+		return complex(element)
 
 def jelly_eval(code, arguments):
 	return variadic_chain(parse_code(code)[-1] if code else '', arguments)
@@ -556,22 +572,6 @@ def jelly_uneval_real(number):
 	string = str(number if number % 1 else int(number))
 	return string.lstrip('0') if number else string
 
-def jellify(element, dirty = False):
-	if element is None:
-		return []
-	if type(element) == str and dirty:
-		return list(element)
-	if type(element) in (int, float, complex) or (type(element) == str and len(element) == 1):
-		return element
-	try:
-		return [jellify(item, dirty) for item in element]
-	except:
-		if element.is_integer:
-			return int(element)
-		if element.is_real:
-			return float(element)
-		return complex(element)
-
 def join(array, glue):
 	array = iterable(array, make_copy = True, make_digits = True)
 	last = array.pop() if array else []
@@ -595,11 +595,11 @@ def last_input():
 		return python_eval(sys.argv[-1])
 	return python_eval(input())
 
-def leading_nilad(chain):
-	return chain and arities(chain) + [1] < [0, 2] * len(chain)
-
 def lcm(x, y):
 	return x * y // (math.gcd(x, y) or 1)
+    
+def leading_nilad(chain):
+	return chain and arities(chain) + [1] < [0, 2] * len(chain)
 
 def loop_until_loop(link, args, return_all = False, return_loop = False, vary_rarg = True):
 	ret, rarg = args
@@ -770,6 +770,11 @@ def nCr(left, right):
 		return result
 	return div(Pi(left), Pi(left - right) * Pi(right))
 
+def neighbors(links, array):
+	array = iterable(array, make_digits = True)
+	chain = dyadic_chain if links[-1].arity == 2 else monadic_chain
+	return [chain(links, list(pair)) for pair in zip(array, array[1:])]
+
 def nfind(links, args, find = None):
 	larg, rarg = args
 	larg = larg or 0
@@ -835,18 +840,6 @@ def overload(operators, *args):
 		else:
 			return ret
 
-def integer_partitions(n, I=1):
-	result = [[n,]]
-	for i in range(I, n//2 + 1):
-		for p in integer_partitions(n-i, i):
-			result.append([i,] + p)
-	return result
-
-def neighbors(links, array):
-	array = iterable(array, make_digits = True)
-	chain = dyadic_chain if links[-1].arity == 2 else monadic_chain
-	return [chain(links, list(pair)) for pair in zip(array, array[1:])]
-
 def parse_code(code):
 	lines = regex_flink.findall(code)
 	links = [[] for line in lines]
@@ -907,6 +900,20 @@ def parse_literal(literal_match):
 		]))
 	return repr(parsed) + ' '
 
+def partition_at(booleans, array, border = 1):
+	booleans = iterable(booleans)
+	array = iterable(array)
+	chunks = [[], []]
+	index = 0
+	while index < len(array):
+		if index < len(booleans) and booleans[index]:
+			chunks.append([])
+			chunks[-border].append(array[index])
+		else:
+			chunks[-1].append(array[index])
+		index += 1
+	return chunks[1:]
+
 def partitions(array):
 	array = iterable(array, make_digits = True)
 	ret = []
@@ -925,20 +932,6 @@ def partitions_generator(array):
 			subarray.insert(0, array[:index])
 			yield subarray
 	yield [array]      
-
-def partition_at(booleans, array, border = 1):
-	booleans = iterable(booleans)
-	array = iterable(array)
-	chunks = [[], []]
-	index = 0
-	while index < len(array):
-		if index < len(booleans) and booleans[index]:
-			chunks.append([])
-			chunks[-border].append(array[index])
-		else:
-			chunks[-1].append(array[index])
-		index += 1
-	return chunks[1:]
 
 def permutation_at_index(index, array = None):
 	result = []
@@ -1124,6 +1117,13 @@ def shuffle(array):
 	random.shuffle(array)
 	return array
 
+def simplest_number(number):
+	if abs(number ** 2) != number ** 2:
+		return number
+	if number % 1:
+		return float(number)
+	return int(number)
+
 def sparse(link, args, indices, indices_literal = False):
 	larg = args[0]
 	if not indices_literal:
@@ -1290,34 +1290,6 @@ def time_format(bitfield):
 	time_string = ':'.join(['%H'] * (bitfield & 4 > 0) + ['%M'] * (bitfield & 2 > 0) + ['%S'] * (bitfield & 1 > 0))
 	return list(time.strftime(time_string))
 
-def translate(mapping, array):
-	array = iterable(array, make_copy = True)
-	mapping = iterable(mapping, make_copy = True)
-	while mapping:
-		source = iterable(mapping.pop(0))
-		destination = iterable(mapping.pop(0))
-		for (index, item) in enumerate(array):
-			if item in source:
-				array[index] = destination[min(source.index(item), len(destination) - 1)]
-	return array
-
-def trim(trimmee, trimmer, left = False, right = False):
-	lindex = 0
-	rindex = len(trimmee)
-	if left:
-		while lindex < rindex and trimmee[lindex] in trimmer:
-			lindex += 1
-	if right:
-		while lindex < rindex and trimmee[rindex - 1] in trimmer:
-			rindex -= 1
-	return trimmee[lindex:rindex]
-
-def try_eval(string):
-	try:
-		return python_eval(string)
-	except:
-		return jellify(string, True)
-
 def to_base(integer, base, bijective = False):
 	if integer == 0:
 		return [0] * (not bijective)
@@ -1391,6 +1363,34 @@ def to_primorial_base(integer):
 		integer, remainder = divmod(integer, sympy.ntheory.generate.prime(placeIndex))
 		digits.append(remainder)
 	return digits[::-1]
+
+def translate(mapping, array):
+	array = iterable(iterable(array, make_digits = True), make_copy = True)
+	mapping = iterable(iterable(mapping, make_digits = True), make_copy = True)
+	while mapping:
+		source = iterable(mapping.pop(0))
+		destination = iterable(mapping.pop(0))
+		for (index, item) in enumerate(array):
+			if item in source:
+				array[index] = destination[min(source.index(item), len(destination) - 1)]
+	return array
+
+def trim(trimmee, trimmer, left = False, right = False):
+	lindex = 0
+	rindex = len(trimmee)
+	if left:
+		while lindex < rindex and trimmee[lindex] in trimmer:
+			lindex += 1
+	if right:
+		while lindex < rindex and trimmee[rindex - 1] in trimmer:
+			rindex -= 1
+	return trimmee[lindex:rindex]
+
+def try_eval(string):
+	try:
+		return python_eval(string)
+	except:
+		return jellify(string, True)
 
 def unicode_to_jelly(string):
 	return ''.join(chr(code_page.find(char)) for char in str(string).replace('\n', '¶') if char in code_page)
@@ -1473,6 +1473,9 @@ def windowed_sublists(array):
 	array = iterable(array, make_range = True)
 	return [sublist for width in range(1, len(array) + 1) for sublist in split_rolling(array, width)]
 
+def zip_ragged(array):
+	return jellify(map(lambda t: filter(None.__ne__, t), itertools.zip_longest(*map(iterable, array))))
+
 def output(argument, end = '', transform = stringify):
 	if locale.getdefaultlocale()[1][0:3] == 'UTF':
 		print(transform(argument), end = end)
@@ -1480,9 +1483,6 @@ def output(argument, end = '', transform = stringify):
 		print(unicode_to_jelly(transform(argument)), end = unicode_to_jelly(end))
 	sys.stdout.flush()
 	return argument
-
-def zip_ragged(array):
-	return jellify(map(lambda t: filter(None.__ne__, t), itertools.zip_longest(*map(iterable, array))))
 
 atoms = {
 	'³': attrdict(
@@ -1593,7 +1593,7 @@ atoms = {
 	),
 	'ċ': attrdict(
 		arity = 2,
-		call = lambda x, y: iterable(x, make_digits = True).count(y)
+		call = lambda x, y: [iterable(x, make_digits = True).count(i) for i in y] if depth(x) == depth(y) == 1 else iterable(x, make_digits = True).count(y)
 	),
 	'ƈ': attrdict(
 		arity = 0,
@@ -1645,7 +1645,7 @@ atoms = {
 	),
 	'e': attrdict(
 		arity = 2,
-		call = lambda x, y: int(x in iterable(y))
+		call = lambda x, y: [int(i in y) for i in x] if depth(x) == depth(y) == 1 else int(x in iterable(y))
 	),
 	'ẹ': attrdict(
 		arity = 2,
@@ -3404,7 +3404,7 @@ quicks = {
 			arity = links[0].arity,
 			call = lambda x = None, y = None: len(loop_until_loop(links[0], (x, y), return_all = True)) - 1
 		)]
-	)
+	),
 	'ƭ': attrdict(
 		condition = lambda links: links and (
 			(links[-1].arity == 0 and len(links) - 1 == links[-1].call()) or
@@ -3460,7 +3460,7 @@ quicks = {
 		condition = lambda links: links,
 		quicklink = lambda links, outmost_links, index: [attrdict(
 			arity = 1,
-			call = lambda z: dyadic_link(links[0], (z, z))
+			call = lambda z: dyadic_link(links[0], (z, z)) if arities(links) == [2] else monadic_link(links[0], z)
 		)]
 	),
 	'⁺': attrdict(
