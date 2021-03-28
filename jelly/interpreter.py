@@ -165,7 +165,7 @@ def div(dividend, divisor, floor = False):
 		return 0
 	if floor or (type(dividend) == int and type(divisor) == int and not dividend % divisor):
 		return int(dividend // divisor)
-	return dividend / divisor
+	return sympy.sympify('({}) / ({})'.format(dividend, divisor))
 
 def dot_product(left, right, truncate = False):
 	left, right = iterable(left), iterable(right)
@@ -217,6 +217,7 @@ def dyadic_chain(chain, args):
 			output(ret)
 			ret = niladic_link(chain[0])
 			chain = chain[1:]
+		ret = jellify(ret)
 	return ret
 
 def dyadic_link(link, args, conv = True, lflat = False, rflat = False):
@@ -518,16 +519,18 @@ def jellify(element, dirty = False):
 		return []
 	if type(element) == str and dirty:
 		return list(element)
-	if type(element) in (int, float, complex) or (type(element) == str and len(element) == 1):
+	if type(element) == int:
+		return sympy.sympify(element)
+	if type(element) == float:
+		return sympy.sympify('{}'.format(element), rational = True)
+	if type(element) == complex:
+		return sympy.sympify('{} + 1j * {}'.format(element.real, element.imag))
+	if type(element) == str and len(element) == 1:
 		return element
 	try:
 		return [jellify(item, dirty) for item in element]
 	except:
-		if element.is_integer:
-			return int(element)
-		if element.is_real:
-			return float(element)
-		return complex(element)
+		return element
 
 def jelly_eval(code, arguments):
 	return variadic_chain(parse_code(code)[-1] if code else '', arguments)
@@ -596,7 +599,7 @@ def last_input():
 	return python_eval(input())
 
 def lcm(x, y):
-	return x * y // (math.gcd(x, y) or 1)
+	return div(x * y, (math.gcd(x, y) or 1), floor = True)
     
 def leading_nilad(chain):
 	return chain and arities(chain) + [1] < [0, 2] * len(chain)
@@ -719,6 +722,7 @@ def monadic_chain(chain, arg):
 			output(ret)
 			ret = niladic_link(chain[0])
 			chain = chain[1:]
+		ret = jellify(ret)
 	atoms['⁸'].call = larg_save
 	return ret
 
@@ -866,8 +870,8 @@ def parse_code(code):
 
 def parse_literal(literal_match):
 	literal = literal_match.group(0)
-	if literal[0] in '”⁾':
-		return repr(literal[1:].replace('¶', '\n'))
+	if literal[0] == '”':
+		return repr(literal[1:])
 	elif literal[0] == '“':
 		if literal[-1] in '«»‘’”':
 			mode = literal[-1]
@@ -875,30 +879,21 @@ def parse_literal(literal_match):
 		else:
 			mode = ''
 		parsed = literal.split('“')[1:]
-		if   mode == '»':
+		if mode == '»':
 			parsed = [sss(string).replace('¶', '\n') for string in parsed]
-		if   mode == '«':
-			parsed = [sss(string).replace('¶', '\n').split() for string in parsed]
-		elif mode == '‘':
-			parsed = [[code_page.find(char) for char in string] for string in parsed]
-		elif mode == '’':
-			parsed = [from_base([code_page.find(char) + 1 for char in string], 250) for string in parsed]
 		else:
 			parsed = [string.replace('¶', '\n') for string in parsed]
-		if mode not in '‘’':
-			parsed = [[string] if len(string) == 1 else string for string in parsed]
+		parsed = [[string] if len(string) == 1 else string for string in parsed]
 		if len(parsed) == 1:
 			parsed = parsed[0]
-	elif literal[0] == '⁽':
-		parsed = from_base([code_page.find(char) + 1 for char in literal[1:]], 250)
-		parsed += parsed > 31500 and -62850 or 750
+		return repr(parsed)
 	else:
-		parsed = eval('+ 1j *'.join([
-			repr(eval('* 10 **'.join(['-1' if part == '-' else (part + '5' if part[-1:] == '.' else part) or repr(2 * index + 1)
-			for index, part in enumerate(component.split('ȷ'))])) if component else index)
+		parsed = sympy.sympify('+ 1j *'.join([
+			repr(sympy.sympify('* 10 **'.join(['-1' if part == '-' else (part + '5' if part[-1:] == '.' else part) or repr(2 * index + 1)
+			for index, part in enumerate(component.split('ȷ'))]), rational = True) if component else index)
 			for index, component in enumerate(literal.split('ı'))
-		]))
-	return repr(parsed) + ' '
+		]), rational = True)
+		return 'sympy.sympify(%s, rational = True)'%repr(str(parsed))
 
 def partition_at(booleans, array, border = 1):
 	booleans = iterable(booleans)
@@ -983,7 +978,7 @@ def Pi(number):
 			return math.factorial(number)
 		except:
 			return functools.reduce(operator.mul, range(1, number + 1), 1)
-	return math.gamma(number + 1)
+	return sympy.gamma(number + 1)
 
 def powerset(array):
 	array = iterable(array, make_range = True)
@@ -1118,6 +1113,7 @@ def shuffle(array):
 	return array
 
 def simplest_number(number):
+	print('Simple:', number, type(number))
 	if abs(number ** 2) != number ** 2:
 		return number
 	if number % 1:
@@ -3305,7 +3301,7 @@ quicks = {
 		condition = lambda links: links and links[0].arity,
 		quicklink = reduce_cumulative
 	),
-        'Ð/': attrdict(
+	'Ð/': attrdict(
 		condition = lambda links: links and links[0].arity,
 		quicklink = reduce_right
 	),
@@ -3313,7 +3309,7 @@ quicks = {
 		condition = lambda links: links and links[0].arity,
 		quicklink = lambda links, outmost_links, index: reduce_right(links, outmost_links, index, cumulative = True)
 	),
-        'Ɓ': attrdict(
+	'Ɓ': attrdict(
 		condition = lambda links: links and (
 			(links[-1].arity == 0 and len(links) - 1 == links[-1].call()) or
 			(links[-1].arity and len(links) == 3)),
@@ -3330,11 +3326,11 @@ quicks = {
 		condition = lambda links: links and links[0].arity,
 		quicklink = foldl
 	),
-        'Ðƒ': attrdict(
+	'Ðƒ': attrdict(
 		condition = lambda links: links and links[0].arity,
 		quicklink = foldl_cumulative
 	),
-        'Ƙ': attrdict(
+	'Ƙ': attrdict(
 		condition = lambda links: links and links[0].arity,
 		quicklink = lambda links, outmost_links, index: [attrdict(
 			arity = 2,
@@ -3355,7 +3351,7 @@ quicks = {
 			call = lambda x, y: [monadic_link(links[0], g) for g in split_key(iterable(x, make_digits = True), iterable(y, make_digits = True))]
 		)]
 	),
-        'ɱ': attrdict(
+	'ɱ': attrdict(
 		condition = lambda links: len(links) - sum(map(leading_nilad, split_suffix(links)[:-1])) >= 2,
 		quicklink = lambda links, outmost_links, index: [attrdict(
 			arity = 1,
@@ -3369,7 +3365,7 @@ quicks = {
 			call = lambda z: neighbors(links, z)
 		)]
 	),
-        'ɲ': attrdict(
+	'ɲ': attrdict(
 		condition = lambda links: links and not leading_nilad(links),
 		quicklink = lambda links, outmost_links, index: [attrdict(
 			arity = 1,
@@ -3426,7 +3422,7 @@ quicks = {
 		condition = lambda links: links and links[0].arity,
 		quicklink = lambda links, outmost_links, index: reduce_cumulative(links, outmost_links, index, rowwise = True)
 	),
-        
+	
 	'¤': quickchain(0, 2),
 	'$': quickchain(1, 2),
 	'Ɗ': quickchain(1, 3),
@@ -3434,7 +3430,7 @@ quicks = {
 	'¥': quickchain(2, 2),
 	'ɗ': quickchain(2, 3),
 	'ʋ': quickchain(2, 4),
-        
+	
 	'#': attrdict(
 		condition = lambda links: len(links) == 2,
 		quicklink = lambda links, outmost_links, index: ([links.pop(0)] if len(links) == 2 and links[0].arity == 0 else []) + [attrdict(
@@ -3442,7 +3438,7 @@ quicks = {
 			call = lambda x = None, y = None: nfind(links, (x, y))
 		)]
 	),
-        '(': attrdict(
+	'(': attrdict(
 		condition = lambda links: links,
 		quicklink = lambda links, outmost_links, index: ([links.pop(0)] if len(links) == 2 and links[0].arity == 0 else []) + [attrdict(
 			arity = max_arity(links),
@@ -3467,7 +3463,7 @@ quicks = {
 		condition = lambda links: links,
 		quicklink = lambda links, outmost_links, index: links * 2
 	),
-        'Ð!': attrdict(
+	'Ð!': attrdict(
 		condition = lambda links: links,
 		quicklink = lambda links, outmost_links, index: [attrdict(
 			arity = max(1, links[0].arity),
@@ -3488,7 +3484,7 @@ quicks = {
 			call = lambda x = None, y = None: ntimes(links, (x, y), cumulative = True)
 		)]
 	),
-        'ÐF': attrdict(
+	'ÐF': attrdict(
 		condition = lambda links: len(links) == 2,
 		quicklink = lambda links, outmost_links, index: ([links.pop(0)] if len(links) == 2 and links[0].arity == 0 else []) + [attrdict(
 			arity = max(link.arity for link in links),
@@ -3509,14 +3505,14 @@ quicks = {
 			call = lambda x = None, y = None: len(while_loop(links[0], links[1], (x, y), cumulative = True)) - 1
 		)]
 	),
-        'ÐẠ': attrdict(
+	'ÐẠ': attrdict(
 		condition = lambda links: links,
 		quicklink = lambda links, outmost_links, index: [attrdict(
 			arity = links[0].arity,
 			call = lambda x, y = None: list(filter(lambda t: all(variadic_link(links[0], (t, y))), iterable(x, make_range = True)))
 		)]
 	),
-        'ÐẸ': attrdict(
+	'ÐẸ': attrdict(
 		condition = lambda links: links,
 		quicklink = lambda links, outmost_links, index: [attrdict(
 			arity = links[0].arity,
@@ -3614,7 +3610,7 @@ quicks = {
 			call = lambda x, y = None: extremes(max, links[0], (x, y))
 		)]
 	),
-        'Ðṁ': attrdict(
+	'Ðṁ': attrdict(
 		condition = lambda links: links,
 		quicklink = lambda links, outmost_lists, index: [attrdict(
 			arity = links[0].arity,
@@ -3628,7 +3624,7 @@ quicks = {
 			call = lambda x, y = None: sparse(links[0], (x, y), range(1, len(x) + 1, 2), indices_literal = True)
 		)]
 	),
-        'ÐP': attrdict(
+	'ÐP': attrdict(
 		condition = lambda links: links,
 		quicklink = lambda links, outmost_links, index: [attrdict(
 			arity = max(1, links[0].arity),
