@@ -1,4 +1,4 @@
-import cmath, copy, functools, hashlib, itertools, locale, math, operator, re, sys, time
+import cmath, copy, datetime, functools, hashlib, itertools, locale, math, operator, re, sys, time
 
 from .utils import attrdict, lazy_import
 
@@ -7,7 +7,7 @@ random, sympy, urllib_request = lazy_import('random sympy urllib.request')
 code_page  = '''¡¢£¤¥¦©¬®µ½¿€ÆÇÐÑ×ØŒÞßæçðıȷñ÷øœþ !"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~¶'''
 code_page += '''°¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ƁƇƊƑƓƘⱮƝƤƬƲȤɓƈɗƒɠɦƙɱɲƥʠɼʂƭʋȥẠḄḌẸḤỊḲḶṂṆỌṚṢṬỤṾẈỴẒȦḂĊḊĖḞĠḢİĿṀṄȮṖṘṠṪẆẊẎŻạḅḍẹḥịḳḷṃṇọṛṣṭ§Äẉỵẓȧḃċḋėḟġḣŀṁṅȯṗṙṡṫẇẋẏż«»‘’“”'''
 
-# Unused symbols for single-byte atoms/quicks: qɦʠẉṇỵẓėġṅẏ
+# Unused symbols for single-byte atoms/quicks: qɦʠṇẉỵẓėṅ
 
 str_digit = '0123456789'
 str_lower = 'abcdefghijklmnopqrstuvwxyz'
@@ -19,6 +19,19 @@ sys.setrecursionlimit(1 << 30)
 
 def arities(links):
 	return [link.arity for link in links]
+
+def as_square(array, filler = None):
+	array = iterable(iterable(array, make_range = True), make_copy = True)
+	matrix = []
+	length = math.ceil(len(iterable(array, make_range = True)) ** 0.5)
+	while array:
+		row = []
+		for _ in range(length):
+			if filler is None and not array:
+				break
+			row.append(array.pop(0) if array else filler)
+		matrix.append(row)
+	return matrix
 
 def at_index(index, array):
 	array = iterable(array, make_digits = True)
@@ -103,17 +116,6 @@ def copy_to(atom, value):
 	atom.call = lambda: value
 	return value
 
-def count_up(links, args):
-	larg, rarg = args
-	matches = variadic_link(links[1], args) if len(links) == 2 else last_input()
-	counter = 1
-	found = 0
-	while found < matches:
-		if variadic_link(links[0], (counter, rarg)):
-			found += 1
-		counter += 1
-	return counter - 1
-
 def create_chain(chain, arity = -1, isForward = True):
 	return attrdict(
 		arity = arity,
@@ -126,6 +128,11 @@ def create_literal(string):
 		arity = 0,
 		call = lambda: python_eval(string, False)
 	)
+
+def datetime_format(bitmask):
+        mask = list(map(eval, bin(bitmask & 63)[2:].zfill(6)))
+        dt_format = ','.join('%' + char for char, bit in zip('YmdHMS', mask) if bit)
+        return [eval(t.lstrip('0') or '0') for t in datetime.datetime.utcnow().strftime(dt_format).split(',')]
 
 def depth(link):
 	if type(link) != list:
@@ -353,7 +360,7 @@ def get_words(string):
 def grid(array):
 	if depth(array) == 1:
 		return join(array, ' ')
-	if depth(array) == 2 and equal(map(len, array)):
+	if depth(array) == 2 and equal(list(map(len, array))):
 		array = [[str(entry) for entry in row] for row in array]
 		width = max(max([len(entry) for entry in row]) if row else 0 for row in array)
 		array = [[list(entry.rjust(width)) for entry in row] for row in array]
@@ -596,7 +603,7 @@ def keep_distinct(array):
 def last_input():
 	if len(sys.argv) > 3:
 		return python_eval(sys.argv[-1])
-	return python_eval(input())
+	return python_eval(sys.stdin.readline())
 
 def lcm(x, y):
 	return div(x * y, (math.gcd(x, y) or 1), floor = True)
@@ -783,7 +790,12 @@ def nfind(links, args, find = None):
 	larg, rarg = args
 	larg = larg or 0
 	if find is None:
-		matches = variadic_link(links[1], args) if len(links) == 2 else last_input()
+		if len(links) == 2:
+			matches = variadic_link(links[1], args)
+		else:
+			matches = last_input()
+			if matches == []:
+				matches = 1
 	else:
 		matches = find
 		
@@ -807,7 +819,7 @@ def niladic_link(link):
 def ntimes(links, args, cumulative = False):
 	ret, rarg = args
 	repetitions = variadic_link(links[1], args) if len(links) == 2 else last_input()
-	repetitions = overload((int, bool), repetitions)
+	repetitions = 0 if repetitions == [] else overload((int, bool), repetitions)
 	if cumulative:
 		cumret = [0] * repetitions
 	for index in range(repetitions):
@@ -860,9 +872,6 @@ def parse_code(code):
 					while not quicks[token].condition(popped) and (chain or chains):
 						popped.insert(0, chain.pop() if chain else chains.pop())
 					chain += quicks[token].quicklink(popped, links, index)
-				elif token in hypers:
-					x = chain.pop() if chain else chains.pop()
-					chain.append(hypers[token](x, links))
 				else:
 					chain.append(create_literal(regex_liter.sub(parse_literal, token)))
 			chains.append(create_chain(chain, arity, isForward))
@@ -870,30 +879,50 @@ def parse_code(code):
 
 def parse_literal(literal_match):
 	literal = literal_match.group(0)
-	if literal[0] == '”':
-		return repr(literal[1:])
+	
+	if literal[0] in '”⁾':
+		return repr(literal[1:].replace('¶', '\n'))
+
 	elif literal[0] == '“':
 		if literal[-1] in '«»‘’”':
 			mode = literal[-1]
 			literal = literal[:-1]
 		else:
 			mode = ''
+			
 		parsed = literal.split('“')[1:]
-		if mode == '»':
+
+		if   mode == '»':
 			parsed = [sss(string).replace('¶', '\n') for string in parsed]
-		else:
-			parsed = [string.replace('¶', '\n') for string in parsed]
-		parsed = [[string] if len(string) == 1 else string for string in parsed]
+		elif mode == '«':
+			parsed = [sss(string).replace('¶', '\n').split() for string in parsed]
+		elif mode == '‘':
+			parsed = [[code_page.find(char) for char in string] for string in parsed]
+		elif mode == '’':
+			parsed = [from_base([code_page.find(char) + 1 for char in string], 250) for string in parsed]
+
+		if mode not in '‘’':
+			parsed = [[string] if len(string) == 1 else string for string in parsed]
+
 		if len(parsed) == 1:
-			parsed = parsed[0]
-		return repr(parsed)
+			parsed = parsed[0] 
+
+	elif literal[0] == '⁽':
+		parsed = from_base([code_page.find(char) + 1 for char in literal[1:]], 250)
+		parsed += -62850 if parsed > 31500 else 750
+
 	else:
-		parsed = sympy.sympify('+ 1j *'.join([
-			repr(sympy.sympify('* 10 **'.join(['-1' if part == '-' else (part + '5' if part[-1:] == '.' else part) or repr(2 * index + 1)
-			for index, part in enumerate(component.split('ȷ'))]), rational = True) if component else index)
-			for index, component in enumerate(literal.split('ı'))
-		]), rational = True)
-		return 'sympy.sympify(%s, rational = True)'%repr(str(parsed))
+		parsed = eval('sympy.sympify({}, rational = True)'.format(
+			sympy.sympify('+ 1j *'.join([
+				repr(sympy.sympify('* 10 **'.join(
+					['-1' if part == '-' else (part + '5' if part[-1:] == '.' else part) or repr(2 * index + 1)
+					 for index, part in enumerate(component.split('ȷ'))]), rational = True)
+				     if component else jndex)
+				for jndex, component in enumerate(literal.split('ı'))
+			]), rational = True)
+		))
+
+	return repr(parsed) + ' '
 
 def partition_at(booleans, array, border = 1):
 	booleans = iterable(booleans)
@@ -1052,10 +1081,11 @@ def reduce(links, outmost_links, index, arity = 1, rowwise = False):
 def reduce_cumulative(links, outmost_links, index, arity = 1, rowwise = False):
 	ret = [attrdict(arity = arity)]
 	if len(links) == 1:
+                chain = dyadic_link if links[0].arity == 2 else monadic_link
 		if rowwise:
-			ret[0].call = lambda t: zip_ragged(list(itertools.accumulate(zip_ragged(iterable(t)), lambda x, y: dyadic_link(links[0], (x, y)))))
+			ret[0].call = lambda t: zip_ragged(list(itertools.accumulate(zip_ragged(iterable(t)), lambda x, y: chain(links[0], [x, y]))))
 		else:
-			ret[0].call = lambda t: list(itertools.accumulate(iterable(t), lambda x, y: dyadic_link(links[0], (x, y))))
+			ret[0].call = lambda t: list(itertools.accumulate(iterable(t), lambda x, y: chain(links[0], [x, y])))
 	else:
 		if rowwise:
 			ret[0].call = lambda z: zip_ragged([reduce_simple(t, links[0]) for t in split_rolling(zip_ragged(iterable(z)), links[1].call())])
@@ -1066,22 +1096,25 @@ def reduce_cumulative(links, outmost_links, index, arity = 1, rowwise = False):
 def reduce_right(links, outmost_links, index, cumulative = False):
 	ret = [attrdict(arity = 1)]
 	if len(links) == 1:
+                chain = dyadic_link if links[0].arity == 2 else monadic_link
 		if cumulative:
-			ret[0].call = lambda t: list(itertools.accumulate(iterable(t)[::-1], lambda x, y: dyadic_link(links[0], (y, x))))
+			ret[0].call = lambda t: list(itertools.accumulate(iterable(t)[::-1], lambda x, y: chain(links[0], [y, x])))
 		else:
-			ret[0].call = lambda t: functools.reduce(lambda x, y: dyadic_link(links[0], (y, x)), iterable(t)[::-1])
+			ret[0].call = lambda t: functools.reduce(lambda x, y: chain(links[0], [y, x]), iterable(t)[::-1])
 	else:
+                chain = dyadic_link if links[0].arity == 2 else monadic_link
 		if cumulative:
-			ret[0].call = lambda z: [functools.reduce(lambda x, y: dyadic_link(links[0], (y, x)), t[::-1]) for t in split_rolling(iterable(z), links[1].call())]
+			ret[0].call = lambda z: [functools.reduce(lambda x, y: chain(links[0], [y, x]), t[::-1]) for t in split_rolling(iterable(z), links[1].call())]
 		else:
-			ret[0].call = lambda z: [functools.reduce(lambda x, y: dyadic_link(links[0], (y, x)), t[::-1]) for t in split_fixed(iterable(z), links[1].call())]
+			ret[0].call = lambda z: [functools.reduce(lambda x, y: chain(links[0], [y, x]), t[::-1]) for t in split_fixed(iterable(z), links[1].call())]
 	return ret
 
 def reduce_simple(array, link, *init):
 	array = iterable(array)
 	if len(array) == 0:
 		return list(init)
-	return functools.reduce(lambda x, y: dyadic_link(link, (x, y)), array, *init)
+	chain = dyadic_link if link.arity == 2 else monadic_link
+	return functools.reduce(lambda x, y: chain(link, (x, y)), array, *init)
 
 def rld(runs):
 	return list(itertools.chain(*[[u] * v for u, v in runs]))
@@ -1113,7 +1146,6 @@ def shuffle(array):
 	return array
 
 def simplest_number(number):
-	print('Simple:', number, type(number))
 	if abs(number ** 2) != number ** 2:
 		return number
 	if number % 1:
@@ -1207,6 +1239,19 @@ def split_prefix(array):
 	array = iterable(array)
 	return [array[:index + 1] for index in range(len(array))]
 
+def split_python(array, needle):
+	string = all(isinstance(element, str) for element in array) and all(isinstance(element, str) for element in needle)
+
+	if not string:
+		return split_at_runs(array, needle)
+	
+	array  = ''.join(array)
+	needle = ''.join(needle)
+
+	if needle is None:
+		return list(map(list, array.split()))
+	return list(map(list, array.split(needle)))
+
 def split_rolling(array, width):
 	if width < 0:
 		return split_rolling_out(array, -width)
@@ -1269,6 +1314,16 @@ def suffix(links, outmost_links, index):
 def symmetric_mod(number, half_divisor):
 	modulus = number % (2 * half_divisor)
 	return modulus - 2 * half_divisor * (modulus > half_divisor)
+
+def table(links, x, y, flat = False):
+	x = iterable(x, make_range = True)
+	y = iterable(y, make_range = True)
+
+	chain = dyadic_chain if links[-1].arity == 2 else monadic_chain
+	if flat:
+		return [ chain(links, [u, v]) for u in x for v in y]
+	else:
+		return [[chain(links, [u, v]) for u in x]for v in y]
 
 def tie(links, outmost_links, index):
 	ret = [attrdict(arity= max(1, *arities(links)))]
@@ -1363,6 +1418,9 @@ def to_primorial_base(integer):
 def translate(mapping, array):
 	array = iterable(iterable(array, make_digits = True), make_copy = True)
 	mapping = iterable(iterable(mapping, make_digits = True), make_copy = True)
+	if len(mapping) % 2:
+		mapping.pop()
+		
 	while mapping:
 		source = iterable(mapping.pop(0))
 		destination = iterable(mapping.pop(0))
@@ -1371,6 +1429,32 @@ def translate(mapping, array):
 				array[index] = destination[min(source.index(item), len(destination) - 1)]
 	return array
 
+def translate_flat(mapping, array):
+	array = iterable(iterable(array, make_digits = True), make_copy = True)
+	mapping = iterable(iterable(mapping, make_digits = True), make_copy = True)
+		
+	while mapping:
+		source = iterable(mapping.pop(0))
+		
+		if mapping:
+			sink = iterable(mapping.pop(0))
+			split = list(split_around(array, source))
+			array = join(split, sink)
+		else:
+			array = flatten(list(split_around(array, source)))
+
+	return array
+
+def translate_to_fixed(mapping, array):
+	array = iterable(iterable(array, make_digits = True), make_copy = True)
+	mapping = iterable(iterable(mapping, make_digits = True), make_copy = True)
+
+	translated = translate_flat(mapping, array)
+	while array != translated:
+		array, translated = translated, translate_flat(mapping, translated)
+
+	return translated
+	
 def trim(trimmee, trimmer, left = False, right = False):
 	lindex = 0
 	rindex = len(trimmee)
@@ -1435,6 +1519,34 @@ def variadic_link(link, args, flat = False, lflat = False, rflat = False):
 		return monadic_link(link, args[0], flat)
 	if link.arity == 2:
 		return dyadic_link(link, args, lflat, rflat)
+
+def vectorise(links, args):
+	x, y = map(iterable, args)
+	if len(links) == 1:
+		link = links[0]
+		chain = monadic_link if link.arity == 1 else dyadic_link
+		return [chain(link, [u, v]) for u, v in zip(x, y)] + x[len(y) :] + y[len(x) :]
+
+	else:
+		link, nilad = links
+		nilad = nilad.call()
+		if isinstance(nilad, list):
+			ret = []
+			for elem, u, v in zip(nilad, x, y):
+				elem = attrdict(arity = 0, call = lambda elem = elem: elem)
+				ret.append(vectorise([link, elem], (u, v)))
+			ret += vectorise([link], (x[len(nilad) :], y[len(nilad) :]))
+			return ret
+		
+		else:
+			if link.arity == 1:
+				return [monadic_link(link, t, flat = nilad) for t in x]
+			if link.arity == 2:
+				if not nilad and len(y) == 1:
+					return [dyadic_link(link, (t, y[0]), rflat = nilad) for t in x]
+				if not nilad and len(x) == 1:
+					return [dyadic_link(link, (x[0], t), lflat = nilad) for t in y]
+				return [dyadic_link(link, (u, v), lflat = nilad, rflat = nilad) for u, v in zip(x, y)] + x[len(y) :] + y[len(x) :]
 
 def while_loop(link, condition, args, cumulative = False):
 	ret, rarg = args
@@ -1678,13 +1790,17 @@ atoms = {
 		rdepth = 0,
 		call = math.gcd
 	),
+	'ġ': attrdict(
+		arity = 2,
+		call = lambda x, y: iterable(y) + iterable(x)
+	),
 	'Ɠ': attrdict(
 		arity = 0,
-		call = lambda: python_eval(input())
+		call = lambda: python_eval(sys.stdin.readline())
 	),
 	'ɠ': attrdict(
 		arity = 0,
-		call = lambda: jellify(input(), dirty = True)
+		call = lambda: jellify(sys.stdin.readline(), dirty = True)
 	),
 	'H': attrdict(
 		arity = 1,
@@ -1755,7 +1871,7 @@ atoms = {
 	),
 	'ḳ': attrdict(
 		arity = 2,
-		call = lambda x, y: [v for u,v in zip(iterable(x, make_digits = True), iterable(y, make_digits = True)) if u]
+		call = lambda x, y: [v for u,v in zip(iterable(x, make_digits = True), iterable(y, make_digits = True)) if u] + iterable(x, make_digits = True)[len(iterable(y, make_digits = True)) :] + iterable(y, make_digits = True)[len(iterable(x, make_digits = True)) :]
 	),
 	'L': attrdict(
 		arity = 1,
@@ -1929,7 +2045,7 @@ atoms = {
 	),
 	'ʂ': attrdict(
 		arity = 0,
-		call = lambda: []
+		call = lambda: 'x'
 	),
 	'T': attrdict(
 		arity = 1,
@@ -2037,6 +2153,10 @@ atoms = {
 	'y': attrdict(
 		arity = 2,
 		call = translate
+	),
+	'ẏ': attrdict(
+		arity = 2,
+		call = translate_flat
 	),
 	'Z': attrdict(
 		arity = 1,
@@ -2380,7 +2500,7 @@ atoms = {
 	'Æṇ': attrdict(
 		arity = 1,
 		ldepth = 1,
-		call = lambda z: math.sqrt(sum(i ** 2 for i in z)),
+		call = lambda z: math.sqrt(sum(i ** 2 for i in iterable(z, make_range = True))),
 	),
 	'ÆP': attrdict(
 		arity = 1,
@@ -2397,6 +2517,11 @@ atoms = {
 		ldepth = 0,
 		call = lambda z: list(sympy.ntheory.generate.primerange(2, z + 1))
 	),
+        'ÆṘ': attrdict(
+                arity = 1,
+                ldepth = 0,
+                call = lambda z: z.n() if isinstance(z, sympy.Basic) else z
+        ),
 	'Ær': attrdict(
 		arity = 1,
 		ldepth = 1,
@@ -2487,6 +2612,10 @@ atoms = {
 		ldepth = 1,
 		call = from_primorial_base
 	),
+	'Œ½': attrdict(
+		arity = 1,
+		call = as_square
+	),
 	'Œ1': attrdict(
 		arity = 1,
 		call = lambda z: iterable(z, make_digits = True)[0] if iterable(z, make_digits = True) else 0
@@ -2501,7 +2630,7 @@ atoms = {
 	),
 	'Œ¡': attrdict(
 		arity = 1,
-		call = permutation_partition
+		call = lambda z: permutation_partition(z) if iterable(z, make_range = True) else [[]]
 	),
 	'Œ?': attrdict(
 		arity = 1,
@@ -2542,21 +2671,21 @@ atoms = {
 	),
 	'Œb': attrdict(
 		arity = 1,
-		call = lambda z: partitions(z) if z else [[]]
+		call = lambda z: partitions(z) if iterable(z, make_digits = True) else [[]]
 	),
 	'Œc': attrdict(
 		arity = 1,
-		rdepth = 0,
+		ldepth = 0,
 		call = lambda z: jellify(itertools.combinations(iterable(z, make_range = True), 2))
 	),
 	'Œċ': attrdict(
 		arity = 1,
-		rdepth = 0,
+		ldepth = 0,
 		call = lambda z: jellify(itertools.combinations_with_replacement(iterable(z, make_range = True), 2))
 	),
 	'Œƈ': attrdict(
 		arity = 1,
-		rdepth = 0,
+		ldepth = 0,
 		call = lambda z: jellify(itertools.combinations(iterable(z, make_range = True), 3))
 	),
 	'ŒƇ': attrdict(
@@ -2633,6 +2762,11 @@ atoms = {
 		arity = 1,
 		call = lambda z: split_evenly(iterable(z, make_range = True), 2)
 	),
+        'ŒI': attrdict(
+                arity = 1,
+                ldepth = 0,
+                call = lambda z: table([atoms['=']], z, z)
+        ),
 	'ŒJ': attrdict(
 		arity = 1,
 		call = indices_md
@@ -2654,6 +2788,10 @@ atoms = {
 		arity = 1,
 		call = lambda z: print(repr(z)) or z
 	),
+        'ŒO': attrdict(
+                arity = 1,
+                call = lambda z: flatten([[t] * u for t, u in enumerate(iterable(z, make_range = True), 1) if u])
+        ),
 	'Œo': attrdict(
 		arity = 1,
 		call = lambda z: [t for t in iterable(z, make_range = True)[::2]]
@@ -2734,6 +2872,11 @@ atoms = {
 		ldepth = 1,
 		call = lambda z: to_case(z, title = True)
 	),
+        'Œṭ': attrdict(
+                arity = 1,
+                ldepth = 0,
+                call = lambda z: datetime_format(z)
+        ),
 	'ŒU': attrdict(
 		arity = 1,
 		call = lambda z: [iterable(x, make_digits = True)[::-1] if b % 2 else iterable(x, make_digits = True) for b, x in enumerate(z)]
@@ -2754,11 +2897,15 @@ atoms = {
 	),
 	'Œv': attrdict(
 		arity = 1,
-		call = extract_digits,
+		call = extract_digits
 	),
 	'ŒW': attrdict(
 		arity = 1,
-		call = get_words,
+		call = get_words
+	),
+	'ŒẈ': attrdict(
+		arity = 1,
+		call = lambda z: split_python(z, None)
 	),
 	'ŒY': attrdict(
 		arity = 1,
@@ -2882,6 +3029,12 @@ atoms = {
 		rdepth = 0,
 		call = primerange
 	),
+        'æṘ': attrdict(
+                arity = 1,
+                ldepth = 0,
+                rdepth = 0,
+                call = lambda x, y: x.n(y) if isinstance(x, sympy.Basic) else x
+        ),
 	'ær': attrdict(
 		arity = 2,
 		ldepth = 0,
@@ -2899,6 +3052,10 @@ atoms = {
 		ldepth = 0,
 		rdepth = 0,
 		call = shift_right
+	),
+	'œ½': attrdict(
+		arity = 2,
+		call = as_square
 	),
 	'œ!': attrdict(
 		arity = 2,
@@ -2960,6 +3117,18 @@ atoms = {
 		arity = 2,
 		call = lambda x, y: trim(x, iterable(y), left = True)
 	),
+        'œn': attrdict(
+                arity = 2,
+                ldepth = 2,
+                rdepth = 1,
+                call = lambda x, y: [at_index_ndim([x[0]+a, x[1]+b], y) for a,b in [[-1,0],[0,-1],[0,1],[1,0]]]
+        ),
+        'œṇ': attrdict(
+                arity = 2,
+                ldepth = 2,
+                rdepth = 1,
+                call = lambda x, y: [at_index_ndim([x[0]+a, x[1]+b], y) for a,b in [[-1,0],[0,-1],[0,0],[0,1],[1,0]]]
+        ),
 	'œP': attrdict(
 		arity = 2,
 		call = lambda x, y: partition_at([int(t + 1 in iterable(x)) for t in range(max(iterable(x) or [0]))], y, border = 0)
@@ -3002,6 +3171,14 @@ atoms = {
 		rdepth = 0,
 		call = split_once
 	),
+	'œẈ': attrdict(
+		arity = 2,
+		call = split_python
+	),
+	'œẏ': attrdict(
+		arity = 2,
+		call = translate_to_fixed
+	),
 	'œ&': attrdict(
 		arity = 2,
 		call = multiset_intersect
@@ -3030,6 +3207,10 @@ atoms = {
 		arity = 0,
 		call = lambda: [2, 2]
 	),
+        'Øı': attrdict(
+                arity = 0,
+                call = lambda: [1, 1j, -1, -1j]
+        ),
 	'Ø.': attrdict(
 		arity = 0,
 		call = lambda: [0, 1]
@@ -3066,9 +3247,17 @@ atoms = {
 		arity = 0,
 		call = lambda: list('/\\')
 	),
+	'Ø°': attrdict(
+		arity = 0,
+		call = lambda: 360
+	),
 	'Ø¹': attrdict(
 		arity = 0,
-		call = lambda: [-1, 0, 1]
+		call = lambda: [1, 0]
+	),
+	'Ø²': attrdict(
+		arity = 0,
+		call = lambda: [2, 0]
 	),
 	'Ø⁵': attrdict(
 		arity = 0,
@@ -3078,13 +3267,21 @@ atoms = {
 		arity = 0,
 		call = lambda: 128
 	),
-	'Ø°': attrdict(
+        'Ø⁹': attrdict(
+                arity = 0,
+                call = lambda: 256
+        ),
+	'Ø⁻': attrdict(
 		arity = 0,
-		call = lambda: 360
+		call = lambda: [-1, 0, 1]
 	),
 	'Ø%': attrdict(
 		arity = 0,
-		call = lambda: 2 ** 32
+		call = lambda: sympy.S(2) ** 32
+	),
+	'Ø,': attrdict(
+		arity = 0,
+		call = [0, 2],
 	),
 	'ØA': attrdict(
 		arity = 0,
@@ -3130,13 +3327,21 @@ atoms = {
 		arity = 0,
 		call = lambda: list('123456789ABCDEF0')
 	),
+        'ØI': attrdict(
+                arity = 0,
+                call = lambda: [[1,0],[0,1]]
+        ),
 	'ØJ': attrdict(
 		arity = 0,
 		call = lambda: list(code_page)
 	),
+	'ØM': attrdict(
+		arity = 0,
+		call = lambda: [31,28,31,30,31,30,31,31,30,31,30,31]
+	),
 	'ØP': attrdict(
 		arity = 0,
-		call = lambda: math.pi
+		call = lambda: sympy.pi
 	),
 	'ØṖ': attrdict(
 		arity = 0,
@@ -3146,6 +3351,14 @@ atoms = {
 		arity = 0,
 		call = lambda: [list('QWERTYUIOP'), list('ASDFGHJKL'), list('ZXCVBNM')]
 	),
+        'ØT': attrdict(
+                arity = 0,
+                call = lambda: datetime_format(7)
+        ),
+        'ØṬ': attrdict(
+                arity = 0,
+                call = lambda: datetime_format(63)
+        ),
 	'ØV': attrdict(
 		arity = 0,
 		call = lambda: list('ṘV')
@@ -3192,7 +3405,7 @@ atoms = {
 	),
 	'Øe': attrdict(
 		arity = 0,
-		call = lambda: math.e
+		call = lambda: sympy.E
 	),
 	'Øẹ': attrdict(
 		arity = 0,
@@ -3210,14 +3423,38 @@ atoms = {
 		arity = 0,
 		call = lambda: list('123456789abcdef0')
 	),
+        'Øm': attrdict(
+                arity = 0,
+                call = lambda: [[1, 1, 1], [1, 0, 1], [1, 1, 1]]
+        ),
+        'Øṃ': attrdict(
+                arity = 0,
+                call = lambda: [[1, 1, 1], [1, 1, 1], [1, 1, 1]]
+        ),
+        'Øn': attrdict(
+                arity = 0,
+                call = lambda: [[0, 1, 0], [1, 0, 1], [0, 1, 0]]
+        ),
+        'Øṇ': attrdict(
+                arity = 0,
+                call = lambda: [[0, 1, 0], [1, 1, 1], [0, 1, 0]]
+        ),
 	'Øp': attrdict(
 		arity = 0,
-		call = lambda: (1 + math.sqrt(5)) / 2
+		call = lambda: div(1 + sympy.sqrt(5), 2)
 	),
 	'Øq': attrdict(
 		arity = 0,
 		call = lambda: [list('qwertyuiop'), list('asdfghjkl'), list('zxcvbnm')]
 	),
+        'Øṛ': attrdict(
+                arity = 0,
+                call = lambda: [0, div(sympy.pi, 4), div(sympy.pi, 2), 3 * div(sympy.pi, 4)]
+        ),
+        'Øṙ': attrdict(
+                arity = 0,
+                call = lambda: [0, 90, 180, 270]
+        ),
 	'Øv': attrdict(
 		arity = 0,
 		call = lambda: list('Ṙv')
@@ -3271,6 +3508,27 @@ quicks = {
 	'ñ': attrdict(
 		condition = lambda links: True,
 		quicklink = lambda links, outmost_links, index: [create_chain(outmost_links[(index + 1) % len(outmost_links)], 2)]
+	),
+	'£': attrdict(
+		condition = lambda links: links,
+		quicklink = lambda links, outmost_links, index: [attrdict(
+			arity = 0,
+			call = niladic_chain(outmost_links[(variadic_chain(links[0], (x, y)) - 1) % len(outmost_links)])
+		)]
+	),
+	'Ŀ': attrdict(
+		condition = lambda links: links,
+		quicklink = lambda links, outmost_links, index: [attrdict(
+			arity = max(1, links[0].arity),
+			call = monadic_chain(outmost_links[(variadic_chain(links[0], (x, y)) - 1) % len(outmost_links)])
+		)]
+	),
+	'ŀ': attrdict(
+		condition = lambda links: links,
+		quicklink = lambda links, outmost_links, index: [attrdict(
+			arity = 2,
+			call = dyadic_chain(outmost_links[(variadic_chain(links[0], (x, y)) - 1) % len(outmost_links)])
+		)]
 	),
 	'¦': attrdict(
 		condition = lambda links: len(links) == 2,
@@ -3431,6 +3689,13 @@ quicks = {
 	'ɗ': quickchain(2, 3),
 	'ʋ': quickchain(2, 4),
 	
+	'"': attrdict(
+		condition = lambda links: links and links[0].arity,
+		quicklink = lambda links, outmost_links, index: [attrdict(
+			arity = max_arity(links),
+			call = lambda x, y = None: vectorise(links, (x, y))
+		)]
+	),
 	'#': attrdict(
 		condition = lambda links: len(links) == 2,
 		quicklink = lambda links, outmost_links, index: ([links.pop(0)] if len(links) == 2 and links[0].arity == 0 else []) + [attrdict(
@@ -3438,30 +3703,101 @@ quicks = {
 			call = lambda x = None, y = None: nfind(links, (x, y))
 		)]
 	),
-	'(': attrdict(
+	"'": attrdict(
 		condition = lambda links: links,
-		quicklink = lambda links, outmost_links, index: ([links.pop(0)] if len(links) == 2 and links[0].arity == 0 else []) + [attrdict(
+		quicklink = lambda links, outmost_links, index: [attrdict(
 			arity = max_arity(links),
-			call = lambda x = None, y = None: nfind(links, (x, y), find = 1),
+			call = lambda x, y = None: table(links, x, y, flat = True) if links[0].arity == 2 else monadic_link(links[0], x, flat = True)
 		)]
 	),
 	'?': attrdict(
 		condition = lambda links: len(links) == 3,
 		quicklink = lambda links, outmost_links, index: [attrdict(
 			arity = max(link.arity for link in links),
-			call = lambda x = None, y = None: variadic_link(links[0], (x, y)) if variadic_link(links[2], (x, y)) else variadic_link(links[1], (x, y))
+			call = lambda x = None, y = None: (
+                                (variadic_link(links[0], (x, y)) if variadic_link(links[2], (x, y)) else variadic_link(links[1], (x, y)))
+                                if len(links) == 3 else (
+                                        (variadic_link(links[0], (x, y)) if last_input() else variadic_link(links[1], (x, y)))
+                                        if len(links) == 2 else
+                                        (last_input() and variadic_link(links[0], (x, y)))
+                                )
+                        )
+		)]
+	),
+	'@': attrdict(
+		condition = lambda links: links,
+		quicklink = lambda links, outmost_links, index: [attrdict(
+			arity = 2,
+			call = lambda x, y: dyadic_link(links[0], (y, x))
 		)]
 	),
 	'`': attrdict(
 		condition = lambda links: links,
 		quicklink = lambda links, outmost_links, index: [attrdict(
 			arity = 1,
-			call = lambda z: dyadic_link(links[0], (z, z)) if arities(links) == [2] else monadic_link(links[0], z)
+			call = lambda z: dyadic_link(links[0], (z, z)) if links[0].arity == 2 else monadic_link(links[0], z)
+		)]
+	),
+	'{': attrdict(
+		condition = lambda links: links,
+		quicklink = lambda links, outmost_links, index: [attrdict(
+			arity = 2,
+			call = lambda x, y: monadic_link(links[0], x) if links[0].arity == 1 else dyadic_link(links[0], (x, x))
+		)]
+	),
+	'}': attrdict(
+		condition = lambda links: links,
+		quicklink = lambda links, outmost_links, index: [attrdict(
+			arity = 2,
+			call = lambda x, y: monadic_link(links[0], y) if links[0].arity == 1 else dyadic_link(links[0], (y, y))
 		)]
 	),
 	'⁺': attrdict(
 		condition = lambda links: links,
 		quicklink = lambda links, outmost_links, index: links * 2
+	),
+	'€': attrdict(
+		condition = lambda links: links,
+		quicklink = lambda links, outmost_links, index: [attrdict(
+			arity = max(1, links[0].arity),
+			call = lambda x, y = None: [variadic_link(links[0], (t, y)) for t in iterable(x, make_range = True)]
+		)]
+	),
+	'Þ': attrdict(
+		condition = lambda links: links and links[0].arity,
+		quicklink = lambda links, outmost_links, index: [attrdict(
+			arity = max_arity(links),
+			call = lambda x, y = None: (
+				sorted(iterable(x, make_range = True), key = lambda t: variadic_link(links[0], (t, y)))
+				if links[-1].arity else
+				flatten([sorted(split_fixed(iterable(x, make_range = True), links[1].call()), key = lambda t: variadic_link(links[0], (t, y)))])
+			)
+		)]
+	),
+	'þ': attrdict(
+		condition = lambda links: links and not leading_nilad(links),
+		quicklink = lambda links, outmost_links, index: [attrdict(
+			arity = 2,
+			call = lambda x, y: table(links, x, y)
+		)]
+	),             
+	'Ð€': attrdict(
+		condition = lambda links: links,
+		quicklink = lambda links, outmost_links, index: [attrdict(
+			arity = 2,
+			call = lambda x, y: [variadic_link(links[0], (x, y)) for t in iterable(y, make_range = True)]
+		)]
+	),
+	'ÐÞ': attrdict(
+		condition = lambda links: links and links[0].arity,
+		quicklink = lambda links, outmost_links, index: [attrdict(
+			arity = max_arity(links),
+			call = lambda x, y = None: (
+				sorted(iterable(x, make_range = True), key = lambda t: variadic_link(links[0], (t, y)), reverse = True)
+				if links[-1].arity else
+				flatten([sorted(split_fixed(iterable(x, make_range = True), links[1].call(), reverse = True), key = lambda t: variadic_link(links[0], (t, y)))])
+			)
+		)]
 	),
 	'Ð!': attrdict(
 		condition = lambda links: links,
@@ -3641,74 +3977,21 @@ quicks = {
 		
 }
 
-hypers = {
-	'"': lambda link, none = None: attrdict(
-		arity = 2,
-		call = lambda x, y: [dyadic_link(link, (u, v)) for u, v in zip(iterable(x), iterable(y))] + iterable(x)[len(iterable(y)) :] + iterable(y)[len(iterable(x)) :]
-	),
-	"'": lambda link, none = None: attrdict(
-		arity = link.arity,
-		call = lambda x = None, y = None: variadic_link(link, (x, y), flat = True, lflat = True, rflat = True)
-	),
-	'@': lambda link, none = None: attrdict(
-		arity = 2,
-		call = lambda x, y: dyadic_link(link, (y, x))
-	),
-	'{': lambda link, none = None: attrdict(
-		arity = 2,
-		call = lambda x, y: variadic_link(link, (x, x))
-	),
-	'}': lambda link, none = None: attrdict(
-		arity = 2,
-		call = lambda x, y: variadic_link(link, (y, y))
-	),
-	'€': lambda link, none = None: attrdict(
-		arity = max(1, link.arity),
-		call = lambda x, y = None: [variadic_link(link, (t, y)) for t in iterable(x, make_range = True)]
-	),
-	'Ð€': lambda link, none = None: attrdict(
-		arity = max(1, link.arity),
-		call = lambda x, y = None: [variadic_link(link, (x, t)) for t in iterable(y, make_range = True)]
-	),
-	'Þ': lambda link, none = None: attrdict(
-		arity = link.arity,
-		call = lambda x, y = None: sorted(iterable(x, make_range = True), key=lambda t: variadic_link(link, (t, y)))
-	),
-	'ÐÞ': lambda link, none = None: attrdict(
-		arity = link.arity,
-		call = lambda x, y = None: sorted(iterable(x, make_range = True), key=lambda t: variadic_link(link, (t, y)), reverse = True)
-	),
-	'þ': lambda link, none = None: attrdict(
-		arity = 2,
-		call = lambda x, y: [[dyadic_link(link, (u, v)) for u in iterable(x, make_range = True)] for v in iterable(y, make_range = True)]
-	),
-	'£': lambda index, links: attrdict(
-		arity = index.arity,
-		call = lambda x = None, y = None: niladic_chain(links[(variadic_link(index, (x, y)) - 1) % (len(links) - 1)])
-	),
-	'Ŀ': lambda index, links: attrdict(
-		arity = max(1, index.arity),
-		call = lambda x, y = None: monadic_chain(links[(variadic_link(index, (x, y)) - 1) % (len(links) - 1)], x)
-	),
-	'ŀ': lambda index, links: attrdict(
-		arity = 2,
-		call = lambda x, y: dyadic_chain(links[(variadic_link(index, (x, y)) - 1) % (len(links) - 1)], (x, y))
-	)
-}
-
 # Aliases
 
 quicks['Ƈ'] = quicks['Ðf']
 quicks['ƥ'] = quicks['Ðḟ']
-hypers['Ɱ'] = hypers['Ð€']
+quicks['Ɱ'] = quicks['Ð€']
 atoms ['Ẓ'] = atoms ['ÆP']
+atoms ['h'] = atoms ['æl']
 
 chain_separators = {
-	'ø': (0, '', True),
-	'µ': (1, '', True),
+	'ø': (0, '',  True),
+	'µ': (1, '',  True),
 	')': (1, '€', True),
-	'ð': (2, '', True),
-	'ɓ': (2, '', False)
+        '(': (1, 'Ƈ', True),
+	'ð': (2, '',  True),
+	'ɓ': (2, '',  False)
 }
 default_chain_separation = (-1, '', True)
 str_arities = ''.join(chain_separators.keys())
@@ -3721,7 +4004,7 @@ str_realnum = str_realdec.join(['(?:', '?ȷ', '?|', ')'])
 str_complex = str_realnum.join(['(?:', '?ı', '?|', ')'])
 str_literal = '(?:%s)' % '|'.join([str_strings, str_charlit, str_chrpair, str_complex, str_intpair])
 str_litlist = '\[*' + str_literal + '(?:(?:\]*,\[*)' + str_literal + ')*' + '\]*'
-str_nonlits = '|'.join(map(re.escape, list(atoms) + list(quicks) + list(hypers)))
+str_nonlits = '|'.join(map(re.escape, list(atoms) + list(quicks)))
 
 regex_chain = re.compile('(?:^(?:' + str_nonlits + '|' + str_litlist + '| )+|[' + str_arities + '])(?:' + str_nonlits + '|' + str_litlist + '| )*')
 regex_liter = re.compile(str_literal)
