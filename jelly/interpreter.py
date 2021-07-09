@@ -1382,7 +1382,7 @@ def to_case(argument, lower = False, swap = False, title = False, upper = False)
 		else:
 			ret.append(item)
 		last_item = item
-	return ret
+	return ret[0] if len(ret) == 1 else ret
 
 def to_exponents(integer):
 	if integer == 1:
